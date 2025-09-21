@@ -3,12 +3,7 @@ A [bouncing DVD](https://www.youtube.com/watch?v=QOtuX0jL85Y) screen saver for y
 
 <p align="center">
   <img src="assets/screenshot.png" alt="dvd terminal screenshot">
-  
 </p>
-
-
-
-
 
 # Install
 
