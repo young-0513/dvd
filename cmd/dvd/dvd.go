@@ -19,163 +19,241 @@ const extraWidth = 4 // widen box by +4 columns
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	// Alt screen & hide cursor
-	fmt.Print("\x1b[?1049h\x1b[?25l")
-	defer fmt.Print("\x1b[0m\x1b[2J\x1b[H\x1b[?25h\x1b[?1049l")
+	cleanupTerminal := startTerminalSession()
+	defer cleanupTerminal()
 
-	// Any key exits
-	oldState, _ := term.MakeRaw(int(os.Stdin.Fd()))
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	keyCh := make(chan struct{}, 1)
-	go func() { b := make([]byte, 1); _, _ = os.Stdin.Read(b); keyCh <- struct{}{} }()
+	ctx, keyCh, release := watchForExit(context.Background())
+	defer release()
 
-	// 3 lines inside UTF-8 box (4 leading spaces)
+	runDVD(ctx, keyCh)
+}
+
+func runDVD(ctx context.Context, key <-chan struct{}) {
 	content := []string{
 		"    D V D",
 		"    --o--",
 		"    video",
 	}
-	pad := 1
+	mode := newDVDMode(content, 1)
+	mode.Run(ctx, key)
+}
+
+func startTerminalSession() func() {
+	fmt.Print("\x1b[?1049h\x1b[?25l")
+	oldState, _ := term.MakeRaw(int(os.Stdin.Fd()))
+
+	return func() {
+		if oldState != nil {
+			_ = term.Restore(int(os.Stdin.Fd()), oldState)
+		}
+		fmt.Print("\x1b[0m\x1b[2J\x1b[H\x1b[?25h\x1b[?1049l")
+	}
+}
+
+func watchForExit(parent context.Context) (context.Context, <-chan struct{}, func()) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	keyCh := make(chan struct{}, 1)
+	go func() {
+		b := make([]byte, 1)
+		_, _ = os.Stdin.Read(b)
+		select {
+		case keyCh <- struct{}{}:
+		default:
+		}
+	}()
+	return ctx, keyCh, func() { stop() }
+}
+
+type dvdMode struct {
+	content    []string
+	pad        int
+	boxWidth   int
+	boxHeight  int
+	screenW    int
+	screenH    int
+	arenaW     int
+	arenaH     int
+	x, y       float64
+	vx, vy     float64
+	color      int
+	cornerHits int
+	last       time.Time
+}
+
+func newDVDMode(content []string, pad int) *dvdMode {
 	cw, ch := textSize(content)
-	bw := cw + 2*pad + 2 + extraWidth // borders + extra width
+	bw := cw + 2*pad + 2 + extraWidth
 	bh := ch + 2*pad + 2
 
-	// Arena for top-left of box: [0..aw] x [0..ah]
-	W, H := termSizeOr(120, 30)
-	aw, ah := max(0, W-bw), max(0, H-bh)
+	w, h := termSizeOr(120, 30)
+	aw, ah := max(0, w-bw), max(0, h-bh)
 
-	// Motion
 	speed := 35.0
 	angle := 0.82
-	x := rand.Float64() * float64(aw)
-	y := rand.Float64() * float64(ah)
-	vx := speed * math.Cos(angle)
-	vy := speed * math.Sin(angle)
 
-	color := ansiColorRand()
-	cornerHits := 0
+	return &dvdMode{
+		content:   content,
+		pad:       pad,
+		boxWidth:  bw,
+		boxHeight: bh,
+		screenW:   w,
+		screenH:   h,
+		arenaW:    aw,
+		arenaH:    ah,
+		x:         rand.Float64() * float64(aw),
+		y:         rand.Float64() * float64(ah),
+		vx:        speed * math.Cos(angle),
+		vy:        speed * math.Sin(angle),
+		color:     ansiColorRand(),
+		last:      time.Now(),
+	}
+}
 
-	tick := time.NewTicker(time.Second / fps)
-	defer tick.Stop()
-	last := time.Now()
+func (m *dvdMode) Run(ctx context.Context, key <-chan struct{}) {
+	ticker := time.NewTicker(time.Second / fps)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-keyCh:
+		case <-key:
 			return
-		case <-tick.C:
-			// Resize + recompute arena
-			if w2, h2 := termSizeOr(120, 30); w2 != W || h2 != H {
-				W, H = w2, h2
-				aw, ah = max(0, W-bw), max(0, H-bh)
-				if x > float64(aw) { x = float64(aw) }
-				if y > float64(ah) { y = float64(ah) }
+		case <-ticker.C:
+			m.resizeIfNeeded()
+			dt := m.stepTime(time.Now())
+			if m.advance(dt) {
+				m.handleCorner()
 			}
-
-			// Step
-			now := time.Now()
-			dt := now.Sub(last).Seconds()
-			if dt <= 0 { dt = 1.0 / fps }
-			last = now
-
-			nx := x + vx*dt
-			ny := y + vy*dt
-
-			// Continuous collision timing (detects simultaneous corner within frame)
-			const eps = 1e-6
-			tx := math.Inf(1)
-			if vx < 0 {
-				tx = (0 - x) / (vx * dt)
-			} else if vx > 0 {
-				tx = (float64(aw) - x) / (vx * dt)
-			}
-			ty := math.Inf(1)
-			if vy < 0 {
-				ty = (0 - y) / (vy * dt)
-			} else if vy > 0 {
-				ty = (float64(ah) - y) / (vy * dt)
-			}
-
-			corner := false
-
-			if tx >= 0 && tx <= 1 && ty >= 0 && ty <= 1 && math.Abs(tx-ty) <= 1e-3 {
-				// exact simultaneous wall impact this frame
-				corner = true
-				x += vx * dt * tx
-				y += vy * dt * ty
-				vx, vy = -vx, -vy
-				rem := (1 - ((tx + ty) / 2)) * dt
-				x += vx * rem
-				y += vy * rem
-			} else {
-				// Per-axis reflect to exact edges
-				if nx < 0 {
-					nx = -nx; vx = -vx
-				} else if nx > float64(aw) {
-					nx = 2*float64(aw) - nx; vx = -vx
-				}
-				if ny < 0 {
-					ny = -ny; vy = -vy
-				} else if ny > float64(ah) {
-					ny = 2*float64(ah) - ny; vy = -vy
-				}
-				x, y = nx, ny
-			}
-
-			// Rendered-corner check (robust for any terminal size + rounding)
-			ix := int(math.Round(x)) + 1
-			iy := int(math.Round(y)) + 1
-			if (ix == 1 || ix == W-bw+1) && (iy == 1 || iy == H-bh+1) {
-				corner = true
-			}
-			// Also check float-space edges in case W/H changed mid-frame
-			if (approx(x, 0, 1e-3) || approx(x, float64(aw), 1e-3)) &&
-				(approx(y, 0, 1e-3) || approx(y, float64(ah), 1e-3)) {
-				corner = true
-			}
-
-			// Corner → color change + counter
-			if corner {
-				prev := color
-				for color == prev {
-					color = ansiColorRand()
-				}
-				cornerHits++
-			}
-
-			// Draw
-			fmt.Print("\x1b[2J\x1b[H")
-			// persistent counter (background)
-			move(1, 1)
-			fmt.Printf("Corner hits: %d", cornerHits)
-
-			// box
-			fmt.Printf("\x1b[%dm", color)
-			top := iy
-			left := ix
-			drawUnicodeBox(top, left, bw, bh)
-			drawTextInBox(top, left, pad, content)
-			fmt.Print("\x1b[0m")
+			m.draw()
 		}
 	}
+}
+
+func (m *dvdMode) resizeIfNeeded() {
+	w, h := termSizeOr(120, 30)
+	if w == m.screenW && h == m.screenH {
+		return
+	}
+	m.screenW, m.screenH = w, h
+	m.arenaW = max(0, w-m.boxWidth)
+	m.arenaH = max(0, h-m.boxHeight)
+	if m.x > float64(m.arenaW) {
+		m.x = float64(m.arenaW)
+	}
+	if m.y > float64(m.arenaH) {
+		m.y = float64(m.arenaH)
+	}
+}
+
+func (m *dvdMode) stepTime(now time.Time) float64 {
+	dt := now.Sub(m.last).Seconds()
+	if dt <= 0 {
+		dt = 1.0 / fps
+	}
+	m.last = now
+	return dt
+}
+
+func (m *dvdMode) advance(dt float64) bool {
+	nx := m.x + m.vx*dt
+	ny := m.y + m.vy*dt
+
+	tx := math.Inf(1)
+	if m.vx < 0 {
+		tx = (0 - m.x) / (m.vx * dt)
+	} else if m.vx > 0 {
+		tx = (float64(m.arenaW) - m.x) / (m.vx * dt)
+	}
+	ty := math.Inf(1)
+	if m.vy < 0 {
+		ty = (0 - m.y) / (m.vy * dt)
+	} else if m.vy > 0 {
+		ty = (float64(m.arenaH) - m.y) / (m.vy * dt)
+	}
+
+	corner := false
+
+	if tx >= 0 && tx <= 1 && ty >= 0 && ty <= 1 && math.Abs(tx-ty) <= 1e-3 {
+		corner = true
+		m.x += m.vx * dt * tx
+		m.y += m.vy * dt * ty
+		m.vx, m.vy = -m.vx, -m.vy
+		rem := (1 - ((tx + ty) / 2)) * dt
+		m.x += m.vx * rem
+		m.y += m.vy * rem
+	} else {
+		if nx < 0 {
+			nx = -nx
+			m.vx = -m.vx
+		} else if nx > float64(m.arenaW) {
+			nx = 2*float64(m.arenaW) - nx
+			m.vx = -m.vx
+		}
+		if ny < 0 {
+			ny = -ny
+			m.vy = -m.vy
+		} else if ny > float64(m.arenaH) {
+			ny = 2*float64(m.arenaH) - ny
+			m.vy = -m.vy
+		}
+		m.x, m.y = nx, ny
+	}
+
+	ix := int(math.Round(m.x)) + 1
+	iy := int(math.Round(m.y)) + 1
+	if (ix == 1 || ix == m.screenW-m.boxWidth+1) && (iy == 1 || iy == m.screenH-m.boxHeight+1) {
+		corner = true
+	}
+	if (approx(m.x, 0, 1e-3) || approx(m.x, float64(m.arenaW), 1e-3)) &&
+		(approx(m.y, 0, 1e-3) || approx(m.y, float64(m.arenaH), 1e-3)) {
+		corner = true
+	}
+
+	return corner
+}
+
+func (m *dvdMode) handleCorner() {
+	prev := m.color
+	for m.color == prev {
+		m.color = ansiColorRand()
+	}
+	m.cornerHits++
+}
+
+func (m *dvdMode) draw() {
+	fmt.Print("\x1b[2J\x1b[H")
+	move(1, 1)
+	fmt.Printf("Corner hits: %d", m.cornerHits)
+
+	fmt.Printf("\x1b[%dm", m.color)
+	top := int(math.Round(m.y)) + 1
+	left := int(math.Round(m.x)) + 1
+	drawUnicodeBox(top, left, m.boxWidth, m.boxHeight)
+	drawTextInBox(top, left, m.pad, m.content)
+	fmt.Print("\x1b[0m")
 }
 
 // ---- drawing / util ----
 
 func drawUnicodeBox(top, left, w, h int) {
-	move(left, top); fmt.Print("┌")
-	for i := 0; i < w-2; i++ { fmt.Print("─") }
+	move(left, top)
+	fmt.Print("┌")
+	for i := 0; i < w-2; i++ {
+		fmt.Print("─")
+	}
 	fmt.Print("┐")
 	for r := 1; r < h-1; r++ {
-		move(left, top+r); fmt.Print("│")
-		move(left+w-1, top+r); fmt.Print("│")
+		move(left, top+r)
+		fmt.Print("│")
+		move(left+w-1, top+r)
+		fmt.Print("│")
 	}
-	move(left, top+h-1); fmt.Print("└")
-	for i := 0; i < w-2; i++ { fmt.Print("─") }
+	move(left, top+h-1)
+	fmt.Print("└")
+	for i := 0; i < w-2; i++ {
+		fmt.Print("─")
+	}
 	fmt.Print("┘")
 }
 
@@ -189,37 +267,61 @@ func drawTextInBox(top, left, pad int, lines []string) {
 }
 
 func move(col, row int) {
-	if col < 1 { col = 1 }
-	if row < 1 { row = 1 }
+	if col < 1 {
+		col = 1
+	}
+	if row < 1 {
+		row = 1
+	}
 	fmt.Printf("\x1b[%d;%dH", row, col)
 }
 
 func textSize(lines []string) (w, h int) {
 	h = len(lines)
 	for _, s := range lines {
-		if ln := runeLen(s); ln > w { w = ln }
+		if ln := runeLen(s); ln > w {
+			w = ln
+		}
 	}
 	return
 }
 
-func runeLen(s string) (n int) { for range s { n++ }; return }
+func runeLen(s string) (n int) {
+	for range s {
+		n++
+	}
+	return
+}
 
 func termSizeOr(dw, dh int) (int, int) {
-	if !term.IsTerminal(int(os.Stdout.Fd())) { return dw, dh }
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return dw, dh
+	}
 	w, h, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil { return dw, dh }
-	// ensure non-zero to keep math sane on tiny terminals
-	if w < 1 { w = 1 }
-	if h < 1 { h = 1 }
+	if err != nil {
+		return dw, dh
+	}
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
 	return w, h
 }
 
-func max(a, b int) int { if a > b { return a }; return b }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
-func approx(v, target, eps float64) bool { return math.Abs(v-target) <= eps }
+func approx(v, target, eps float64) bool {
+	return math.Abs(v-target) <= eps
+}
 
 func ansiColorRand() int {
-	// normal + bright ANSI (reds..cyans)
 	palette := []int{31, 32, 33, 34, 35, 36, 91, 92, 93, 94, 95, 96}
 	return palette[rand.Intn(len(palette))]
 }
