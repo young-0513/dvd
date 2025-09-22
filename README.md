@@ -11,8 +11,7 @@ A [bouncing DVD](https://www.youtube.com/watch?v=QOtuX0jL85Y) screen saver for y
   - `go install github.com/integrii/dvd/cmd/dvd@latest`
 
 ## Using Homebrew on MacOS
-  - `brew tap integrii/dvd https://github.com/integrii/dvd`
-  - `brew install --HEAD integrii/dvd/dvd`
+  - `brew tap integrii/dvd https://github.com/integrii/dvd && brew install --HEAD integrii/dvd/dvd`
 
 
 # tmux Screen Saver
