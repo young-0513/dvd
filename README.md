@@ -1,5 +1,5 @@
-# DVD 📀 Video
-A [bouncing DVD](https://www.youtube.com/watch?v=QOtuX0jL85Y) screen saver for your terminal. You can configure tmux to start this after a period of being idle for extra fun.
+# DVD 📀 Video Terminal Screen Saver
+A terminal [bouncing DVD](https://www.youtube.com/watch?v=QOtuX0jL85Y) screen saver for your terminal. You can configure tmux to start this after a period of being idle for extra fun.
 
 <p align="center">
   <img src="assets/dvd.gif" alt="dvd terminal screenshot">
