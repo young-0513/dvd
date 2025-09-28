@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"golang.org/x/term"
@@ -226,43 +227,51 @@ func (m *dvdMode) draw() {
 	move(1, 1)
 	fmt.Printf("Corner hits: %d", m.cornerHits)
 
-	fmt.Printf("\x1b[%dm", m.color)
 	top := int(math.Round(m.y)) + 1
 	left := int(math.Round(m.x)) + 1
-	drawUnicodeBox(top, left, m.boxWidth, m.boxHeight)
-	drawTextInBox(top, left, m.pad, m.content)
+	textColor, backgroundColor := colorsForBlock(m.color)
+	drawSolidBlock(top, left, m.boxWidth, m.boxHeight, m.pad, m.content, textColor, backgroundColor)
 	fmt.Print("\x1b[0m")
 }
 
 // ---- drawing / util ----
 
-func drawUnicodeBox(top, left, w, h int) {
-	move(left, top)
-	fmt.Print("┌")
-	for i := 0; i < w-2; i++ {
-		fmt.Print("─")
+func drawSolidBlock(top, left, w, h, pad int, lines []string, textColor, backgroundColor int) {
+	colorSequence := fmt.Sprintf("\x1b[%d;%dm", textColor, backgroundColor)
+	fill := strings.Repeat(" ", w)
+
+	for row := 0; row < h; row++ {
+		move(left, top+row)
+		fmt.Print(colorSequence)
+		fmt.Print(fill)
 	}
-	fmt.Print("┐")
-	for r := 1; r < h-1; r++ {
-		move(left, top+r)
-		fmt.Print("│")
-		move(left+w-1, top+r)
-		fmt.Print("│")
+
+	row := top + 1 + pad
+	for _, line := range lines {
+		move(left+1+pad, row)
+		fmt.Print(colorSequence)
+		fmt.Print(line)
+		row++
 	}
-	move(left, top+h-1)
-	fmt.Print("└")
-	for i := 0; i < w-2; i++ {
-		fmt.Print("─")
-	}
-	fmt.Print("┘")
 }
 
-func drawTextInBox(top, left, pad int, lines []string) {
-	row := top + 1 + pad
-	for _, s := range lines {
-		move(left+1+pad, row)
-		fmt.Print(s)
-		row++
+func colorsForBlock(baseColor int) (textColor, backgroundColor int) {
+	backgroundColor = backgroundFromBase(baseColor)
+	textColor = readableTextColor(baseColor)
+	return
+}
+
+func backgroundFromBase(baseColor int) int {
+	return baseColor + 10
+}
+
+func readableTextColor(baseColor int) int {
+	switch baseColor {
+	case 33, 36,
+		91, 92, 93, 94, 95, 96:
+		return 30
+	default:
+		return 97
 	}
 }
 
